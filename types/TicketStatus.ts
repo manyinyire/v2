@@ -1,0 +1,1 @@
+export type TicketStatus = 'Open' | 'Escalated (Tier 2)' | 'Escalated (Tier 3)' | 'Resolved'; 

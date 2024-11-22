@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "esnext",
+    "moduleResolution": "node",
+    "target": "es2020",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "jsx": "react-jsx",
+    "outDir": "./dist",
+    "incremental": false,
+    "importHelpers": true
+  },
+  "include": ["node_modules/@supabase/auth-helpers-nextjs/src"],
+  "exclude": ["node_modules"]
+}
