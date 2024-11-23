@@ -13,7 +13,7 @@
  *         name: status
  *         schema:
  *           type: string
- *           enum: [open, in_progress, pending, resolved, closed]
+ *           enum: ['NEW', 'ASSIGNED', 'IN_PROGRESS', 'ESCALATED_TIER1', 'ESCALATED_TIER2', 'ESCALATED_TIER3', 'RESOLVED', 'CLOSED']
  *         description: Filter tickets by status
  *       - in: query
  *         name: priority
@@ -27,6 +27,21 @@
  *           type: string
  *           format: uuid
  *         description: Filter tickets by SBU
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search tickets by title or description
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *         description: Page number for pagination
+ *       - in: query
+ *         name: pageSize
+ *         schema:
+ *           type: integer
+ *         description: Number of tickets per page
  *     responses:
  *       200:
  *         description: Successfully retrieved tickets
@@ -39,72 +54,126 @@
  *                   type: array
  *                   items:
  *                     $ref: '#/components/schemas/Ticket'
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     page:
+ *                       type: integer
+ *                     pageSize:
+ *                       type: integer
+ *                     total:
+ *                       type: integer
  *       401:
  *         description: Unauthorized
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
  *       500:
  *         description: Internal server error
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
  */
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
-import { Database } from '@/types/supabase'
+import type { Database } from '@/types/supabase'
 
-// GET /api/tickets - Get all tickets (with role-based filtering)
 export async function GET(request: Request) {
   try {
     const supabase = createRouteHandlerClient<Database>({ cookies })
-    
-    // Get current user's session
+    const { searchParams } = new URL(request.url)
+
+    // Get user session
     const { data: { session }, error: authError } = await supabase.auth.getSession()
     if (authError) throw authError
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user's role
+    // Get user's role and SBU
     const { data: userProfile, error: profileError } = await supabase
-      .from('user_profiles')
-      .select('*')
-      .eq('id', session.user.id)
+      .from('user_profiles_new')
+      .select('role, sbu_id')
+      .eq('user_id', session.user.id)
       .single()
 
-    if (profileError) {
-      return NextResponse.json({ error: 'Failed to fetch user profile' }, { status: 500 })
+    if (profileError) throw profileError
+    if (!userProfile) {
+      return NextResponse.json({ error: 'User profile not found' }, { status: 404 })
     }
 
-    // Build query based on role
-    const query = supabase
+    // Build query
+    let query = supabase
       .from('tickets')
       .select(`
         *,
-        user_profiles!tickets_created_by_fkey(*),
-        assigned_user:user_profiles!tickets_assigned_to_fkey(*),
-        sbu(*)
+        assigned_to:user_profiles_new!assigned_to(full_name, email),
+        created_by:user_profiles_new!created_by(full_name, email),
+        sbu:sbus(name)
       `)
 
-    // Apply role-based filters
+    // Apply filters based on user role
     if (userProfile.role === 'agent') {
-      query.eq('assigned_to', session.user.id)
+      query = query.eq('assigned_to', session.user.id)
+    } else if (userProfile.role === 'user') {
+      query = query.eq('created_by', session.user.id)
+    } else if (userProfile.role === 'manager') {
+      query = query.eq('sbu_id', userProfile.sbu_id)
+    }
+    // Admins can see all tickets
+
+    // Apply status filter
+    const status = searchParams.get('status')
+    if (status) {
+      query = query.eq('status', status)
     }
 
+    // Apply priority filter
+    const priority = searchParams.get('priority')
+    if (priority) {
+      query = query.eq('priority', priority)
+    }
+
+    // Apply SBU filter (only for admins and managers)
+    const sbuId = searchParams.get('sbu_id')
+    if (sbuId && ['admin', 'manager'].includes(userProfile.role)) {
+      query = query.eq('sbu_id', sbuId)
+    }
+
+    // Apply search filter
+    const search = searchParams.get('search')
+    if (search) {
+      query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%`)
+    }
+
+    // Apply pagination
+    const page = parseInt(searchParams.get('page') || '1')
+    const pageSize = parseInt(searchParams.get('pageSize') || '10')
+    const start = (page - 1) * pageSize
+    const end = start + pageSize - 1
+
+    // Get total count for pagination
+    const { count } = await supabase
+      .from('tickets')
+      .select('*', { count: 'exact', head: true })
+
+    // Get paginated results
     const { data: tickets, error: ticketsError } = await query
+      .order('created_at', { ascending: false })
+      .range(start, end)
 
-    if (ticketsError) {
-      return NextResponse.json({ error: 'Failed to fetch tickets' }, { status: 500 })
-    }
+    if (ticketsError) throw ticketsError
 
-    return NextResponse.json({ tickets })
+    return NextResponse.json({
+      tickets,
+      pagination: {
+        page,
+        pageSize,
+        total: count
+      }
+    })
+
   } catch (error) {
     console.error('Error in GET /api/tickets:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
   }
 }
 
@@ -113,7 +182,7 @@ export async function GET(request: Request) {
  * /api/tickets:
  *   post:
  *     summary: Create a new ticket
- *     description: Create a new ticket in the system. The ticket will be automatically assigned based on SLA configurations.
+ *     description: Create a new ticket in the system
  *     tags:
  *       - Tickets
  *     security:
@@ -132,73 +201,36 @@ export async function GET(request: Request) {
  *             properties:
  *               title:
  *                 type: string
- *                 description: Title of the ticket
  *               description:
  *                 type: string
- *                 description: Detailed description of the issue
  *               priority:
  *                 type: string
  *                 enum: [low, medium, high, urgent]
- *                 description: Priority level of the ticket
  *               sbu_id:
  *                 type: string
  *                 format: uuid
- *                 description: ID of the SBU this ticket belongs to
  *     responses:
  *       201:
- *         description: Successfully created ticket
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 ticket:
- *                   $ref: '#/components/schemas/Ticket'
- *       400:
- *         description: Bad request - missing or invalid fields
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
+ *         description: Ticket created successfully
  *       401:
  *         description: Unauthorized
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
  *       500:
  *         description: Internal server error
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
  */
-// POST /api/tickets - Create a new ticket
 export async function POST(request: Request) {
   try {
     const supabase = createRouteHandlerClient<Database>({ cookies })
-    
-    // Get current user's session
+    const body = await request.json()
+
+    // Get user session
     const { data: { session }, error: authError } = await supabase.auth.getSession()
     if (authError) throw authError
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Parse request body
-    const body = await request.json()
-    const {
-      title,
-      description,
-      priority,
-      sbu_id,
-      card_number,
-      system_module,
-      account_number,
-      query_type
-    } = body
-
     // Validate required fields
+    const { title, description, priority, sbu_id } = body
     if (!title || !description || !priority || !sbu_id) {
       return NextResponse.json(
         { error: 'Missing required fields' },
@@ -206,22 +238,7 @@ export async function POST(request: Request) {
       )
     }
 
-    // Get SLA config for the SBU
-    const { data: slaConfig, error: slaError } = await supabase
-      .from('sla_configs')
-      .select('sla_time')
-      .eq('sbu_id', sbu_id)
-      .eq('ticket_status', 'open')
-      .single()
-
-    if (slaError) {
-      return NextResponse.json(
-        { error: 'Failed to fetch SLA config' },
-        { status: 500 }
-      )
-    }
-
-    // Create the ticket
+    // Create ticket
     const { data: ticket, error: ticketError } = await supabase
       .from('tickets')
       .insert({
@@ -229,286 +246,227 @@ export async function POST(request: Request) {
         description,
         priority,
         sbu_id,
-        status: 'open',
-        created_by: session.user.id,
-        sla_time: slaConfig.sla_time,
-        card_number,
-        system_module,
-        account_number,
-        query_type
+        status: 'NEW',
+        created_by: session.user.id
       })
-      .select(`
-        *,
-        user_profiles!tickets_created_by_fkey(*),
-        assigned_user:user_profiles!tickets_assigned_to_fkey(*),
-        sbu(*)
-      `)
+      .select()
       .single()
 
-    if (ticketError) {
-      return NextResponse.json(
-        { error: 'Failed to create ticket' },
-        { status: 500 }
-      )
-    }
+    if (ticketError) throw ticketError
 
-    return NextResponse.json({ ticket }, { status: 201 })
+    return NextResponse.json(ticket, { status: 201 })
+
   } catch (error) {
     console.error('Error in POST /api/tickets:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
   }
 }
 
 /**
  * @swagger
- * /api/tickets/{id}:
+ * /api/tickets:
  *   put:
  *     summary: Update a ticket
- *     description: Update an existing ticket. Users can only update tickets they have access to based on their role.
+ *     description: Update an existing ticket. Only admins, managers, and assigned agents can update tickets.
  *     tags:
  *       - Tickets
  *     security:
  *       - BearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *         description: ID of the ticket to update
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
+ *             required:
+ *               - id
  *             properties:
+ *               id:
+ *                 type: string
+ *                 format: uuid
  *               title:
  *                 type: string
- *                 description: Title of the ticket
  *               description:
  *                 type: string
- *                 description: Detailed description of the issue
- *               status:
- *                 type: string
- *                 enum: [open, in_progress, pending, resolved, closed]
- *                 description: Current status of the ticket
  *               priority:
  *                 type: string
  *                 enum: [low, medium, high, urgent]
- *                 description: Priority level of the ticket
+ *               status:
+ *                 type: string
+ *                 enum: ['NEW', 'ASSIGNED', 'IN_PROGRESS', 'ESCALATED_TIER1', 'ESCALATED_TIER2', 'ESCALATED_TIER3', 'RESOLVED', 'CLOSED']
  *               assigned_to:
  *                 type: string
  *                 format: uuid
- *                 description: ID of the user this ticket is assigned to
  *     responses:
  *       200:
- *         description: Successfully updated ticket
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 ticket:
- *                   $ref: '#/components/schemas/Ticket'
- *       400:
- *         description: Bad request - invalid fields
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
+ *         description: Ticket updated successfully
  *       401:
  *         description: Unauthorized
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
  *       403:
- *         description: Forbidden - user does not have access to this ticket
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
+ *         description: Forbidden
  *       404:
  *         description: Ticket not found
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
  *       500:
  *         description: Internal server error
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
  */
-// PUT /api/tickets/:id - Update a ticket
 export async function PUT(request: Request) {
   try {
     const supabase = createRouteHandlerClient<Database>({ cookies })
-    
-    // Get current user's session
+    const body = await request.json()
+
+    // Get user session
     const { data: { session }, error: authError } = await supabase.auth.getSession()
     if (authError) throw authError
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Parse request body and URL
-    const body = await request.json()
-    const url = new URL(request.url)
-    const id = url.searchParams.get('id')
+    // Get user's role
+    const { data: userProfile, error: profileError } = await supabase
+      .from('user_profiles_new')
+      .select('role, sbu_id')
+      .eq('user_id', session.user.id)
+      .single()
 
-    if (!id) {
-      return NextResponse.json({ error: 'Missing ticket ID' }, { status: 400 })
+    if (profileError) throw profileError
+    if (!userProfile) {
+      return NextResponse.json({ error: 'User profile not found' }, { status: 404 })
     }
 
     // Get current ticket
     const { data: currentTicket, error: ticketError } = await supabase
       .from('tickets')
       .select('*')
-      .eq('id', id)
+      .eq('id', body.id)
       .single()
 
-    if (ticketError) {
-      return NextResponse.json(
-        { error: 'Failed to fetch current ticket' },
-        { status: 500 }
-      )
+    if (ticketError) throw ticketError
+    if (!currentTicket) {
+      return NextResponse.json({ error: 'Ticket not found' }, { status: 404 })
     }
 
-    // Check if status is being updated
-    if (body.status && body.status !== currentTicket.status) {
-      // Get SLA config for new status
-      const { data: slaConfig, error: slaError } = await supabase
-        .from('sla_configs')
-        .select('sla_time')
-        .eq('sbu_id', currentTicket.sbu_id)
-        .eq('ticket_status', body.status)
-        .single()
+    // Check permissions
+    const canUpdate = userProfile.role === 'admin' ||
+      userProfile.role === 'manager' ||
+      (userProfile.role === 'agent' && currentTicket.assigned_to === session.user.id)
 
-      if (!slaError && slaConfig) {
-        body.sla_time = slaConfig.sla_time
-      }
+    if (!canUpdate) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    // Update the ticket
+    // Update ticket
     const { data: ticket, error: updateError } = await supabase
       .from('tickets')
-      .update(body)
-      .eq('id', id)
-      .select(`
-        *,
-        user_profiles!tickets_created_by_fkey(*),
-        assigned_user:user_profiles!tickets_assigned_to_fkey(*),
-        sbu(*)
-      `)
+      .update({
+        title: body.title,
+        description: body.description,
+        priority: body.priority,
+        status: body.status,
+        assigned_to: body.assigned_to,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', body.id)
+      .select()
       .single()
 
-    if (updateError) {
-      return NextResponse.json(
-        { error: 'Failed to update ticket' },
-        { status: 500 }
-      )
-    }
+    if (updateError) throw updateError
 
-    return NextResponse.json({ ticket })
+    return NextResponse.json(ticket)
+
   } catch (error) {
     console.error('Error in PUT /api/tickets:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
   }
 }
 
 /**
  * @swagger
- * /api/tickets/{id}:
+ * /api/tickets:
  *   delete:
  *     summary: Delete a ticket
- *     description: Delete an existing ticket. Only accessible by admins.
+ *     description: Delete an existing ticket. Only admins and managers can delete tickets.
  *     tags:
  *       - Tickets
  *     security:
  *       - BearerAuth: []
  *     parameters:
- *       - in: path
+ *       - in: query
  *         name: id
  *         required: true
  *         schema:
  *           type: string
  *           format: uuid
- *         description: ID of the ticket to delete
+ *         description: Ticket ID
  *     responses:
  *       200:
- *         description: Successfully deleted ticket
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
+ *         description: Ticket deleted successfully
  *       401:
  *         description: Unauthorized
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
  *       403:
- *         description: Forbidden - user is not an admin
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
+ *         description: Forbidden
  *       404:
  *         description: Ticket not found
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
  *       500:
  *         description: Internal server error
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
  */
-// DELETE /api/tickets/:id - Delete a ticket
 export async function DELETE(request: Request) {
   try {
     const supabase = createRouteHandlerClient<Database>({ cookies })
-    
-    // Get current user's session
+    const { searchParams } = new URL(request.url)
+    const id = searchParams.get('id')
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Missing ticket ID' },
+        { status: 400 }
+      )
+    }
+
+    // Get user session
     const { data: { session }, error: authError } = await supabase.auth.getSession()
     if (authError) throw authError
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get ticket ID from URL
-    const url = new URL(request.url)
-    const id = url.searchParams.get('id')
+    // Get user's role
+    const { data: userProfile, error: profileError } = await supabase
+      .from('user_profiles_new')
+      .select('role')
+      .eq('user_id', session.user.id)
+      .single()
 
-    if (!id) {
-      return NextResponse.json({ error: 'Missing ticket ID' }, { status: 400 })
+    if (profileError) throw profileError
+    if (!userProfile) {
+      return NextResponse.json({ error: 'User profile not found' }, { status: 404 })
     }
 
-    // Delete the ticket
+    // Check permissions
+    if (!['admin', 'manager'].includes(userProfile.role)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    // Delete ticket
     const { error: deleteError } = await supabase
       .from('tickets')
       .delete()
       .eq('id', id)
 
-    if (deleteError) {
-      return NextResponse.json(
-        { error: 'Failed to delete ticket' },
-        { status: 500 }
-      )
-    }
+    if (deleteError) throw deleteError
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ message: 'Ticket deleted successfully' })
+
   } catch (error) {
     console.error('Error in DELETE /api/tickets:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
   }
 }
