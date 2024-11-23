@@ -1,103 +1,145 @@
 "use client"
 
-import { Eye, ArrowUpCircle, CheckCircle } from 'lucide-react'
+import { Eye, ArrowUpCircle, CheckCircle, MessageSquare } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Badge } from "@/components/ui/badge"
 import { SLACountdown } from './SLACountdown'
-import { TicketStatus } from '../../types/TicketStatus'
-
-export interface Ticket {
-  id: string
-  sbu: string
-  status: TicketStatus;
-  description: string;
-  createdAt: number;
-  assignee?: string;
-  slaTime: number;
-}
+import type { Ticket, TicketStatus, TicketPriority, UserProfile } from '@/types'
+import { format } from 'date-fns'
+import { cn } from '@/lib/utils'
 
 interface TicketTableProps {
-  tickets: Ticket[]
+  tickets: (Ticket & {
+    assignee?: UserProfile
+  })[]
   showAssignee?: boolean
-  onUpdate: (id: string, status: TicketStatus, slaTime: number) => void
-  onEscalate: (id: string) => void
-  onResolve: (id: string) => void
+  onView: (ticket: Ticket) => void
+  onAssign?: (ticketId: string) => void
+  onEscalate?: (ticketId: string) => void
+  onResolve?: (ticketId: string) => void
+  onComment: (ticketId: string) => void
+  userRole: 'user' | 'agent' | 'manager' | 'admin'
 }
 
-export function TicketTable({ tickets, showAssignee, onUpdate, onEscalate, onResolve }: TicketTableProps) {
+const priorityColors: Record<TicketPriority, string> = {
+  low: 'bg-gray-500',
+  medium: 'bg-blue-500',
+  high: 'bg-orange-500',
+  urgent: 'bg-red-500'
+}
+
+const statusColors: Record<TicketStatus, string> = {
+  new: 'bg-gray-500',
+  assigned: 'bg-blue-500',
+  in_progress: 'bg-yellow-500',
+  escalated: 'bg-orange-500',
+  resolved: 'bg-green-500',
+  closed: 'bg-gray-700'
+}
+
+export function TicketTable({ 
+  tickets, 
+  showAssignee, 
+  onView,
+  onAssign,
+  onEscalate, 
+  onResolve,
+  onComment,
+  userRole
+}: TicketTableProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Recent Tickets</CardTitle>
-        <CardDescription>Overview of the latest escalated queries</CardDescription>
+        <CardTitle>Tickets</CardTitle>
+        <CardDescription>
+          View and manage support tickets
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[100px]">Ticket ID</TableHead>
-              <TableHead>SBU</TableHead>
+              <TableHead>ID</TableHead>
+              <TableHead>Title</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="text-right">SLA</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead>Priority</TableHead>
+              {showAssignee && <TableHead>Assignee</TableHead>}
+              <TableHead>Created</TableHead>
+              <TableHead>SLA</TableHead>
+              <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {tickets.map(ticket => (
+            {tickets.map((ticket) => (
               <TableRow key={ticket.id}>
-                <TableCell className="font-medium">{ticket.id}</TableCell>
-                <TableCell>{ticket.sbu}</TableCell>
-                <TableCell>{ticket.status}</TableCell>
-                <TableCell className="text-right">
-                  {ticket.status !== 'Resolved' ? (
-                    <SLACountdown
-                      ticket={ticket}
-                      onUpdate={onUpdate}
-                    />
-                  ) : (
-                    <span className="text-green-500">Resolved</span>
-                  )}
+                <TableCell>{ticket.id}</TableCell>
+                <TableCell>{ticket.title}</TableCell>
+                <TableCell>
+                  <Badge className={cn("text-white", statusColors[ticket.status])}>
+                    {ticket.status.replace('_', ' ')}
+                  </Badge>
                 </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end space-x-2">
-                    <Dialog>
-                      <DialogTrigger asChild>
-                        <Button variant="outline" size="icon">
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>Ticket Details: {ticket.id}</DialogTitle>
-                          <DialogDescription>
-                            SBU: {ticket.sbu}<br />
-                            Status: {ticket.status}<br />
-                            Created: {new Date(ticket.createdAt).toLocaleString()}<br />
-                            Description: {ticket.description}
-                          </DialogDescription>
-                        </DialogHeader>
-                      </DialogContent>
-                    </Dialog>
-                    {ticket.status !== 'Resolved' && ticket.status !== 'Escalated (Tier 3)' && (
+                <TableCell>
+                  <Badge className={cn("text-white", priorityColors[ticket.priority])}>
+                    {ticket.priority}
+                  </Badge>
+                </TableCell>
+                {showAssignee && (
+                  <TableCell>
+                    {ticket.assignee?.full_name || 'Unassigned'}
+                  </TableCell>
+                )}
+                <TableCell>
+                  {format(new Date(ticket.created_at), 'MMM d, yyyy')}
+                </TableCell>
+                <TableCell>
+                  <SLACountdown 
+                    ticket={ticket}
+                    onUpdate={onEscalate ? 
+                      (id, status) => {
+                        if (status.startsWith('ESCALATED_')) {
+                          onEscalate(id)
+                        }
+                      } : undefined
+                    }
+                  />
+                </TableCell>
+                <TableCell>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => onView(ticket)}
+                    >
+                      <Eye className="h-4 w-4" />
+                    </Button>
+                    {onAssign && userRole !== 'user' && (
                       <Button
-                        variant="outline"
+                        variant="ghost"
                         size="icon"
-                        onClick={() => onEscalate(ticket.id)}
+                        onClick={() => onAssign(ticket.id)}
                       >
                         <ArrowUpCircle className="h-4 w-4" />
                       </Button>
                     )}
-                    {ticket.status !== 'Resolved' && (
+                    {onResolve && userRole !== 'user' && (
                       <Button
-                        variant="outline"
+                        variant="ghost"
                         size="icon"
                         onClick={() => onResolve(ticket.id)}
                       >
                         <CheckCircle className="h-4 w-4" />
                       </Button>
                     )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => onComment(ticket.id)}
+                    >
+                      <MessageSquare className="h-4 w-4" />
+                    </Button>
                   </div>
                 </TableCell>
               </TableRow>

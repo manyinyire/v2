@@ -9,12 +9,20 @@ const publicRoutes = [
   '/auth/callback',
   '/auth/forgot-password',
   '/auth/reset-password',
+  '/auth/verify-email'
 ]
 
 // List of auth-only routes that should redirect to home if authenticated
 const authOnlyRoutes = [
   '/auth/login',
   '/auth/signup',
+  '/auth/forgot-password'
+]
+
+// List of admin-only routes
+const adminRoutes = [
+  '/admin',
+  '/settings/system'
 ]
 
 export async function middleware(req: NextRequest) {
@@ -45,6 +53,11 @@ export async function middleware(req: NextRequest) {
       req.nextUrl.pathname.startsWith(route)
     )
 
+    // Check if current route is admin-only
+    const isAdminRoute = adminRoutes.some(route => 
+      req.nextUrl.pathname.startsWith(route)
+    )
+
     // If authenticated and trying to access auth pages, redirect to home
     if (session && isAuthOnlyRoute) {
       return NextResponse.redirect(new URL('/', req.url))
@@ -57,31 +70,32 @@ export async function middleware(req: NextRequest) {
 
     // If not authenticated and trying to access protected route, redirect to login
     if (!session) {
-      let redirectPath = req.nextUrl.pathname
-      if (req.nextUrl.search) {
-        redirectPath += req.nextUrl.search
-      }
-      
       const loginUrl = new URL('/auth/login', req.url)
-      loginUrl.searchParams.set('redirectTo', redirectPath)
-      
+      loginUrl.searchParams.set('redirectTo', req.nextUrl.pathname)
       return NextResponse.redirect(loginUrl)
     }
 
-    // User is authenticated and accessing a protected route
+    // Check admin access
+    if (isAdminRoute) {
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('role')
+        .eq('user_id', session.user.id)
+        .single()
+
+      if (!profile || profile.role !== 'admin') {
+        return NextResponse.redirect(new URL('/', req.url))
+      }
+    }
+
+    // User is authenticated and authorized, proceed
     return res
   } catch (error) {
     console.error('Middleware error:', error)
     
-    // For any unexpected errors, redirect to login with the intended destination
-    let redirectPath = req.nextUrl.pathname
-    if (req.nextUrl.search) {
-      redirectPath += req.nextUrl.search
-    }
-    
+    // For any unexpected errors, redirect to login
     const loginUrl = new URL('/auth/login', req.url)
-    loginUrl.searchParams.set('redirectTo', redirectPath)
-    
+    loginUrl.searchParams.set('redirectTo', req.nextUrl.pathname)
     return NextResponse.redirect(loginUrl)
   }
 }

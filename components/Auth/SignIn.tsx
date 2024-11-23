@@ -1,99 +1,113 @@
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
-import { useState } from 'react'
-import { toast } from 'react-hot-toast'
+import { useState, FormEvent, useEffect } from 'react'
+import { toast } from 'sonner'
+import { useAuth } from '@/contexts/AuthContext'
+import { useRouter } from 'next/navigation'
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card'
+import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { Icons } from '@/components/ui/icons'
+import { Loader2 } from 'lucide-react'
+import Link from 'next/link'
 
 export function SignIn() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
-  
-  const supabase = createClientComponentClient()
+  const [isLoading, setIsLoading] = useState(false)
+  const { signIn, user, loading } = useAuth()
+  const router = useRouter()
 
-  const handleSignIn = async (e: React.FormEvent) => {
+  useEffect(() => {
+    if (!loading && user) {
+      router.push('/')
+    }
+  }, [user, router, loading])
+
+  const handleSignIn = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    setLoading(true)
+    setIsLoading(true)
     
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
-
-      if (error) {
-        console.error('Sign in error:', error)
-        throw error
-      }
-
-      if (data?.user) {
-        console.log('Sign in successful:', data)
-        window.location.href = '/dashboard' // or wherever you want to redirect
-      }
-
+      await signIn(email, password)
+      router.push('/')
     } catch (error) {
       console.error('Sign in error:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to sign in')
-    } finally {
-      setLoading(false)
+      toast.error(error instanceof Error ? error.message : 'Failed to sign in. Please check your credentials.')
+      setIsLoading(false)
     }
   }
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="w-8 h-8 animate-spin" />
+      </div>
+    )
+  }
+
   return (
-    <div className="flex min-h-full flex-1 flex-col justify-center px-6 py-12 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-sm">
-        <h2 className="mt-10 text-center text-2xl font-bold leading-9 tracking-tight text-gray-900">
-          Sign in to your account
-        </h2>
-      </div>
-
-      <div className="mt-10 sm:mx-auto sm:w-full sm:max-w-sm">
-        <form className="space-y-6" onSubmit={handleSignIn}>
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium leading-6 text-gray-900">
-              Email address
-            </label>
-            <div className="mt-2">
-              <input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
-              />
-            </div>
+    <Card className="w-full max-w-md">
+      <CardHeader className="space-y-1">
+        <CardTitle className="text-2xl font-bold">Sign in</CardTitle>
+        <CardDescription>
+          Enter your email and password to access your account
+        </CardDescription>
+      </CardHeader>
+      <form onSubmit={handleSignIn}>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="email">Email</Label>
+            <Input
+              id="email"
+              type="email"
+              placeholder="name@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.currentTarget.value)}
+              required
+              disabled={isLoading}
+            />
           </div>
-
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium leading-6 text-gray-900">
-              Password
-            </label>
-            <div className="mt-2">
-              <input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
-              />
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="password">Password</Label>
+              <Link
+                href="/auth/forgot-password"
+                className="text-sm text-primary hover:underline"
+              >
+                Forgot password?
+              </Link>
             </div>
+            <Input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.currentTarget.value)}
+              required
+              disabled={isLoading}
+            />
           </div>
-
-          <div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="flex w-full justify-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold leading-6 text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:opacity-50"
+        </CardContent>
+        <CardFooter className="flex flex-col space-y-4">
+          <Button 
+            type="submit" 
+            className="w-full" 
+            disabled={isLoading}
+          >
+            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Sign in
+          </Button>
+          <div className="text-sm text-center text-muted-foreground">
+            Don't have an account?{' '}
+            <Link
+              href="/auth/signup"
+              className="text-primary hover:underline"
             >
-              {loading ? 'Signing in...' : 'Sign in'}
-            </button>
+              Sign up
+            </Link>
           </div>
-        </form>
-      </div>
-    </div>
+        </CardFooter>
+      </form>
+    </Card>
   )
-} 
+}

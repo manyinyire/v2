@@ -1,0 +1,23 @@
+Admin Login Credentials:
+Email: admin@example.com
+Password: admin123
+
+Managers:
+IT: it.manager@outrisk.co.zw
+HR: hr.manager@outrisk.co.zw
+Sales: sales.manager@outrisk.co.zw
+Support: support.manager@outrisk.co.zw
+Agents:
+IT: it.agent1@outrisk.co.zw
+HR: hr.agent1@outrisk.co.zw
+Sales: sales.agent1@outrisk.co.zw
+Support: support.agent1@outrisk.co.zw
+Regular Users:
+user1@outrisk.co.zw (IT Department)
+user2@outrisk.co.zw (HR Department)
+All passwords remain the same:
+
+Managers: Manager123!
+Agents: Agent123!
+Users: User123!
+Note: These credentials are for development purposes only. Please change the password in production.

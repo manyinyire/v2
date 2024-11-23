@@ -4,7 +4,6 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
   images: { unoptimized: true },
-  optimizeFonts: true,
   experimental: {
     optimizePackageImports: ['@/components/ui']
   },
@@ -19,7 +18,7 @@ const nextConfig = {
       },
     };
     return config;
-  },
+  }
 }
 
 module.exports = nextConfig

@@ -4,6 +4,7 @@ import { ThemeProvider } from '@/components/ThemeProvider'
 import { Toaster } from '@/components/ui/sonner'
 import { MainLayout } from '@/components/Layout/MainLayout'
 import { headers } from 'next/headers'
+import { AuthProvider } from '@/contexts/AuthContext'
 import './globals.css'
 
 const inter = Inter({ 
@@ -36,13 +37,15 @@ export default async function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          {isAuthPage ? (
-            children
-          ) : (
-            <MainLayout>
-              {children}
-            </MainLayout>
-          )}
+          <AuthProvider>
+            {isAuthPage ? (
+              children
+            ) : (
+              <MainLayout>
+                {children}
+              </MainLayout>
+            )}
+          </AuthProvider>
           <Toaster />
         </ThemeProvider>
       </body>

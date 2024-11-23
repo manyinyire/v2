@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { format } from 'date-fns'
-import { Download, Edit, Trash2, RefreshCw } from 'lucide-react'
+import { Download, Edit, Trash2, RefreshCw, UserPlus } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
@@ -10,9 +10,20 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogT
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useUserManagement } from '@/hooks/useUserManagement'
 import { toast } from "sonner"
+import type { Database } from '@/types/supabase'
 
-type UserRole = 'admin' | 'manager' | 'agent'
+type UserRole = Database['public']['Enums']['user_role']
+
+interface User {
+  id: string
+  email: string
+  full_name: string
+  role: UserRole
+  sbu_id?: string
+  created_at: string
+}
 
 interface SBU {
   id: string
@@ -20,35 +31,17 @@ interface SBU {
   description: string
 }
 
-interface User {
-  id: string
-  full_name: string
-  email: string
-  role: UserRole
-  created_at: string
-  last_sign_in_at?: string
-  sbu_name?: string
-  sbu_id?: string
-}
-
-interface NewUser {
-  email: string
-  full_name: string
-  role: UserRole
-  sbu_id?: string
-}
-
 export function UserManagement() {
-  const [users, setUsers] = useState<User[]>([])
+  const { users, loading, fetchUsers, createUser, updateUser, deleteUser } = useUserManagement()
   const [sbus, setSBUs] = useState<SBU[]>([])
-  const [loading, setLoading] = useState(true)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
+  const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<User | null>(null)
-  const [newUser, setNewUser] = useState<NewUser>({
+  const [newUser, setNewUser] = useState({
     email: '',
     full_name: '',
-    role: 'agent',
-    sbu_id: undefined
+    role: 'agent' as UserRole,
+    sbu_id: undefined as string | undefined
   })
 
   // Fetch SBUs
@@ -66,46 +59,12 @@ export function UserManagement() {
     }
   }
 
-  // Fetch users
-  const fetchUsers = async () => {
-    try {
-      setLoading(true)
-      console.log('Fetching users...')
-      
-      const response = await fetch('/api/users', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
-      
-      if (!response.ok) {
-        const errorData = await response.json()
-        console.error('Server response:', {
-          status: response.status,
-          statusText: response.statusText,
-          error: errorData
-        })
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
-      }
-      
-      const data = await response.json()
-      console.log('Fetched users:', data)
-      setUsers(data)
-    } catch (error) {
-      console.error('Error fetching users:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to fetch users')
-    } finally {
-      setLoading(false)
-    }
-  }
-
   useEffect(() => {
     fetchUsers()
     fetchSBUs()
-  }, [])
+  }, [fetchUsers])
 
-  // Create user
+  // Handle user creation
   const handleCreateUser = async () => {
     try {
       if (!newUser.email || !newUser.full_name || !newUser.role) {
@@ -113,81 +72,48 @@ export function UserManagement() {
         return
       }
 
-      const response = await fetch('/api/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newUser)
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.message || 'Failed to create user')
-      }
-
-      toast.success('User created successfully')
-      await fetchUsers()
-      setNewUser({ email: '', full_name: '', role: 'agent', sbu_id: undefined })
+      await createUser(newUser)
+      setCreateDialogOpen(false)
+      setNewUser({ email: '', full_name: '', role: 'agent' as UserRole, sbu_id: undefined })
     } catch (error) {
       console.error('Error creating user:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to create user')
     }
   }
 
-  // Update user
+  // Handle edit user
+  const handleEditUser = (user: User) => {
+    setEditingUser(user)
+    setEditDialogOpen(true)
+  }
+
+  // Handle update user
   const handleUpdateUser = async () => {
-    if (!editingUser) return
-
     try {
-      const response = await fetch('/api/users', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: editingUser.id,
-          full_name: editingUser.full_name,
-          email: editingUser.email,
-          role: editingUser.role,
-          sbu_id: editingUser.sbu_id
-        })
+      if (!editingUser) return
+
+      await updateUser({
+        id: editingUser.id,
+        full_name: editingUser.full_name,
+        role: editingUser.role,
+        sbu_id: editingUser.sbu_id
       })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.message || 'Failed to update user')
-      }
-
-      toast.success('User updated successfully')
-      await fetchUsers()
-      setEditingUser(null)
       setEditDialogOpen(false)
+      setEditingUser(null)
     } catch (error) {
       console.error('Error updating user:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to update user')
     }
   }
 
-  // Delete user
+  // Handle delete user
   const handleDeleteUser = async (userId: string) => {
-    if (!confirm('Are you sure you want to delete this user?')) return
-
     try {
-      const response = await fetch(`/api/users?id=${userId}`, {
-        method: 'DELETE'
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.message || 'Failed to delete user')
-      }
-
-      toast.success('User deleted successfully')
-      await fetchUsers()
+      await deleteUser(userId)
     } catch (error) {
       console.error('Error deleting user:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to delete user')
     }
   }
 
-  // Export users
+  // Export users to CSV
   const handleExportUsers = () => {
     const csvContent = [
       // Header
@@ -214,50 +140,66 @@ export function UserManagement() {
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle>User Management</CardTitle>
         <div className="flex gap-2">
-          <Button onClick={handleExportUsers} variant="outline" size="icon" title="Export Users">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => fetchUsers()}
+            disabled={loading === 'loading'}
+          >
+            <RefreshCw className={`h-4 w-4 ${loading === 'loading' ? 'animate-spin' : ''}`} />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={handleExportUsers}
+          >
             <Download className="h-4 w-4" />
           </Button>
-          <Button onClick={fetchUsers} variant="outline" size="icon" title="Refresh">
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-          <Dialog>
+          <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
             <DialogTrigger asChild>
-              <Button>Add User</Button>
+              <Button>
+                <UserPlus className="h-4 w-4 mr-2" />
+                Add User
+              </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Add New User</DialogTitle>
+                <DialogTitle>Create New User</DialogTitle>
               </DialogHeader>
               <div className="grid gap-4 py-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="email">Email</Label>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="name" className="text-right">
+                    Name
+                  </Label>
+                  <Input
+                    id="name"
+                    value={newUser.full_name}
+                    onChange={(e) => setNewUser({ ...newUser, full_name: e.target.value })}
+                    className="col-span-3"
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="email" className="text-right">
+                    Email
+                  </Label>
                   <Input
                     id="email"
                     type="email"
                     value={newUser.email}
-                    onChange={(e) => setNewUser(prev => ({ ...prev, email: e.target.value }))}
-                    placeholder="user@example.com"
+                    onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                    className="col-span-3"
                   />
                 </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="name">Full Name</Label>
-                  <Input
-                    id="name"
-                    value={newUser.full_name}
-                    onChange={(e) => setNewUser(prev => ({ ...prev, full_name: e.target.value }))}
-                    placeholder="John Doe"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="role">Role</Label>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="role" className="text-right">
+                    Role
+                  </Label>
                   <Select
                     value={newUser.role}
-                    onValueChange={(value: UserRole) => 
-                      setNewUser(prev => ({ ...prev, role: value }))
-                    }
+                    onValueChange={(value: UserRole) => setNewUser({ ...newUser, role: value })}
                   >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select role" />
+                    <SelectTrigger className="col-span-3">
+                      <SelectValue placeholder="Select a role" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="admin">Admin</SelectItem>
@@ -266,19 +208,19 @@ export function UserManagement() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="sbu">SBU</Label>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="sbu" className="text-right">
+                    SBU
+                  </Label>
                   <Select
                     value={newUser.sbu_id}
-                    onValueChange={(value: string) => 
-                      setNewUser(prev => ({ ...prev, sbu_id: value }))
-                    }
+                    onValueChange={(value) => setNewUser({ ...newUser, sbu_id: value })}
                   >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select SBU" />
+                    <SelectTrigger className="col-span-3">
+                      <SelectValue placeholder="Select an SBU" />
                     </SelectTrigger>
                     <SelectContent>
-                      {sbus.map(sbu => (
+                      {sbus.map((sbu) => (
                         <SelectItem key={sbu.id} value={sbu.id}>
                           {sbu.name}
                         </SelectItem>
@@ -295,138 +237,134 @@ export function UserManagement() {
         </div>
       </CardHeader>
       <CardContent>
-        {loading ? (
-          <div className="flex justify-center p-4">Loading...</div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>SBU</TableHead>
-                <TableHead>Last Login</TableHead>
-                <TableHead className="w-[100px]">Actions</TableHead>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Email</TableHead>
+              <TableHead>Role</TableHead>
+              <TableHead>SBU</TableHead>
+              <TableHead>Last Login</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {users.map((user) => (
+              <TableRow key={user.id}>
+                <TableCell>{user.full_name}</TableCell>
+                <TableCell>{user.email}</TableCell>
+                <TableCell className="capitalize">{user.role}</TableCell>
+                <TableCell>{user.sbu_name || 'Not Assigned'}</TableCell>
+                <TableCell>
+                  {user.last_sign_in_at
+                    ? format(new Date(user.last_sign_in_at), 'PPp')
+                    : 'Never'}
+                </TableCell>
+                <TableCell className="text-right">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleEditUser(user)}
+                  >
+                    <Edit className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleDeleteUser(user.id)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {users.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell>{user.full_name}</TableCell>
-                  <TableCell>{user.email}</TableCell>
-                  <TableCell className="capitalize">{user.role}</TableCell>
-                  <TableCell>{user.sbu_name || 'Not Assigned'}</TableCell>
-                  <TableCell>
-                    {user.last_sign_in_at 
-                      ? format(new Date(user.last_sign_in_at), 'PPp')
-                      : 'Never'
-                    }
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-2">
-                      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-                        <DialogTrigger asChild>
-                          <Button 
-                            variant="ghost" 
-                            size="icon"
-                            title="Edit User"
-                            onClick={() => setEditingUser(user)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>Edit User</DialogTitle>
-                          </DialogHeader>
-                          <div className="grid gap-4 py-4">
-                            <div className="grid gap-2">
-                              <Label htmlFor="edit-name">Name</Label>
-                              <Input
-                                id="edit-name"
-                                value={editingUser?.full_name || ''}
-                                onChange={(e) => setEditingUser(prev => 
-                                  prev ? { ...prev, full_name: e.target.value } : null
-                                )}
-                                placeholder="John Doe"
-                              />
-                            </div>
-                            <div className="grid gap-2">
-                              <Label htmlFor="edit-email">Email</Label>
-                              <Input
-                                id="edit-email"
-                                type="email"
-                                value={editingUser?.email || ''}
-                                onChange={(e) => setEditingUser(prev => 
-                                  prev ? { ...prev, email: e.target.value } : null
-                                )}
-                                placeholder="user@example.com"
-                              />
-                            </div>
-                            <div className="grid gap-2">
-                              <Label htmlFor="edit-role">Role</Label>
-                              <Select
-                                value={editingUser?.role || 'agent'}
-                                onValueChange={(value: UserRole) => 
-                                  setEditingUser(prev => 
-                                    prev ? { ...prev, role: value } : null
-                                  )
-                                }
-                              >
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Select role" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="admin">Admin</SelectItem>
-                                  <SelectItem value="manager">Manager</SelectItem>
-                                  <SelectItem value="agent">Agent</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div className="grid gap-2">
-                              <Label htmlFor="edit-sbu">SBU</Label>
-                              <Select
-                                value={editingUser?.sbu_id}
-                                onValueChange={(value: string) => 
-                                  setEditingUser(prev => 
-                                    prev ? { ...prev, sbu_id: value } : null
-                                  )
-                                }
-                              >
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Select SBU" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {sbus.map(sbu => (
-                                    <SelectItem key={sbu.id} value={sbu.id}>
-                                      {sbu.name}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          </div>
-                          <DialogFooter>
-                            <Button onClick={handleUpdateUser}>Save Changes</Button>
-                          </DialogFooter>
-                        </DialogContent>
-                      </Dialog>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title="Delete User"
-                        onClick={() => handleDeleteUser(user.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
+            ))}
+          </TableBody>
+        </Table>
       </CardContent>
+
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit User</DialogTitle>
+          </DialogHeader>
+          {editingUser && (
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="edit-name" className="text-right">
+                  Name
+                </Label>
+                <Input
+                  id="edit-name"
+                  value={editingUser.full_name}
+                  onChange={(e) =>
+                    setEditingUser({ ...editingUser, full_name: e.target.value })
+                  }
+                  className="col-span-3"
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="edit-email" className="text-right">
+                  Email
+                </Label>
+                <Input
+                  id="edit-email"
+                  type="email"
+                  value={editingUser.email}
+                  onChange={(e) =>
+                    setEditingUser({ ...editingUser, email: e.target.value })
+                  }
+                  className="col-span-3"
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="edit-role" className="text-right">
+                  Role
+                </Label>
+                <Select
+                  value={editingUser.role}
+                  onValueChange={(value: UserRole) =>
+                    setEditingUser({ ...editingUser, role: value })
+                  }
+                >
+                  <SelectTrigger className="col-span-3">
+                    <SelectValue placeholder="Select a role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="admin">Admin</SelectItem>
+                    <SelectItem value="manager">Manager</SelectItem>
+                    <SelectItem value="agent">Agent</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="edit-sbu" className="text-right">
+                  SBU
+                </Label>
+                <Select
+                  value={editingUser.sbu_id}
+                  onValueChange={(value) =>
+                    setEditingUser({ ...editingUser, sbu_id: value })
+                  }
+                >
+                  <SelectTrigger className="col-span-3">
+                    <SelectValue placeholder="Select an SBU" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {sbus.map((sbu) => (
+                      <SelectItem key={sbu.id} value={sbu.id}>
+                        {sbu.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button onClick={handleUpdateUser}>Save Changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }

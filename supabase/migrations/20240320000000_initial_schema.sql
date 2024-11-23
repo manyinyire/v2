@@ -31,10 +31,21 @@ CREATE TABLE IF NOT EXISTS public.tier_assignments (
     CONSTRAINT fk_tier_assignments_user FOREIGN KEY (user_id) REFERENCES user_profiles(id) ON DELETE CASCADE
 );
 
+CREATE TYPE ticket_status AS ENUM (
+  'NEW',
+  'ASSIGNED',
+  'IN_PROGRESS', 
+  'ESCALATED_TIER1',
+  'ESCALATED_TIER2',
+  'ESCALATED_TIER3',
+  'RESOLVED',
+  'CLOSED'
+);
+
 CREATE TABLE IF NOT EXISTS public.sla_configs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     sbu_id UUID NOT NULL,
-    ticket_status VARCHAR(50) NOT NULL,
+    ticket_status ticket_status NOT NULL,
     sla_time INTEGER NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -74,4 +85,4 @@ CREATE TRIGGER update_tier_assignments_updated_at
 CREATE TRIGGER update_sla_configs_updated_at
     BEFORE UPDATE ON sla_configs
     FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column(); 
+    EXECUTE FUNCTION update_updated_at_column();

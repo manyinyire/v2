@@ -3,9 +3,8 @@ import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
 import { redirect } from 'next/navigation'
 
 export default async function Home() {
-  const cookieStore = cookies()
   const supabase = createServerComponentClient({
-    cookies: () => cookieStore
+    cookies
   })
 
   const {

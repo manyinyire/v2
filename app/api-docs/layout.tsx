@@ -3,11 +3,13 @@ import 'swagger-ui-react/swagger-ui.css';
 export default function ApiDocsLayout({
   children,
 }: {
-  children: React.ReactNode;
+  children: React.ReactNode
 }) {
   return (
     <div className="container mx-auto p-4">
-      {children}
+      <div className="prose dark:prose-invert max-w-none">
+        {children}
+      </div>
     </div>
-  );
+  )
 }

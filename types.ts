@@ -7,7 +7,7 @@ type Tables = Database['public']['Tables']
 export type UserProfile = {
   id: string
   full_name: string | null
-  role: 'admin' | 'manager' | 'agent'
+  role: Database['public']['Enums']['user_role']
   created_at: string
   updated_at: string
 }
@@ -20,10 +20,12 @@ export type SBU = {
   updated_at: string
 }
 
-export type TicketStatus = 'open' | 'escalated_tier1' | 'escalated_tier2' | 'resolved' | 'closed'
-export type TicketPriority = 'low' | 'medium' | 'high' | 'urgent'
+export type UserRole = Database['public']['Enums']['user_role']
+export type TicketStatus = Database['public']['Enums']['ticket_status']
+export type TicketPriority = Database['public']['Enums']['ticket_priority']
 
 export interface Ticket {
+  [x: string]: any
   id: string
   title: string
   description: string
@@ -44,7 +46,7 @@ export interface Ticket {
 export interface SbuWithRelations extends SBU {
   sla_configs: {
     id: string
-    ticket_status: 'open' | 'escalated_tier1' | 'escalated_tier2'
+    ticket_status: TicketStatus
     sla_time: number
   }[]
   tier_assignments: {
