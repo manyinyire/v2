@@ -6,7 +6,7 @@ export const getTickets = async (sbuId?: string) => {
   const supabase = createClient()
   const query = supabase
     .from('tickets')
-    .select('*, created_by:user_profiles(*), assigned_to:user_profiles(*)')
+    .select('*, created_by:user_profiles_new(*), assigned_to:user_profiles_new(*)')
   
   if (sbuId) {
     query.eq('sbu_id', sbuId)
@@ -39,12 +39,12 @@ export const getSBUById = async (id: string) => {
 // User Profiles
 export const getUserProfile = async (userId: string) => {
   const supabase = createClient()
-  return await supabase.from('user_profiles').select('*').eq('id', userId).single()
+  return await supabase.from('user_profiles_new').select('*').eq('id', userId).single()
 }
 
-export const updateUserProfile = async (userId: string, data: Database['public']['Tables']['user_profiles']['Update']) => {
+export const updateUserProfile = async (userId: string, data: Database['public']['Tables']['user_profiles_new']['Update']) => {
   const supabase = createClient()
-  return await supabase.from('user_profiles').update(data).eq('id', userId)
+  return await supabase.from('user_profiles_new').update(data).eq('id', userId)
 }
 
 // Settings

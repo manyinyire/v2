@@ -5,8 +5,8 @@ import { Database } from '@/types/supabase'
 
 export async function GET(request: Request) {
   try {
-    const cookieStore = await cookies()
-    const supabase = createRouteHandlerClient<Database>({ cookies: () => cookieStore })
+    const cookieStore = cookies()
+    const supabase = createRouteHandlerClient<Database>({ cookies: async () => cookieStore })
 
     // Get current user's session
     const { data: { session }, error: authError } = await supabase.auth.getSession()
@@ -24,9 +24,10 @@ export async function GET(request: Request) {
 
     // Search for users by full name or email
     const { data: users, error: searchError } = await supabase
-      .from('user_profiles')
-      .select('id, full_name, email, role')
+      .from('user_profiles_new')
+      .select('id, full_name, email, role, status')
       .or(`full_name.ilike.%${query}%,email.ilike.%${query}%`)
+      .eq('status', 'active')
       .limit(10)
 
     if (searchError) {
@@ -39,7 +40,8 @@ export async function GET(request: Request) {
       id: user.id,
       full_name: user.full_name || 'Unknown',
       email: user.email || '',
-      role: user.role
+      role: user.role,
+      status: user.status
     })) || []
 
     return NextResponse.json({ users: transformedUsers })

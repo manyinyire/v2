@@ -1,3 +1,5 @@
+'use client'
+
 import { useCallback, useEffect, useState } from 'react'
 import { useSupabase } from '@/providers/SupabaseProvider'
 import { toast } from 'sonner'
@@ -9,7 +11,7 @@ import type { Ticket } from '@/types'
 type TicketFilters = {
   status?: string[]
   priority?: string[]
-  sbu_id?: string
+  sbu?: string
   assigned_to?: string
   search?: string
   dateRange?: {
@@ -39,15 +41,9 @@ export function useTickets() {
 
     // Get user's role and SBU
     const { data: userProfile, error: profileError } = await supabase
-      .from('user_profiles')
-      .select(`
-        role,
-        tier_assignments (
-          tier,
-          sbu_id
-        )
-      `)
-      .eq('id', session.user.id)
+      .from('user_profiles_new')
+      .select('*')
+      .eq('user_id', session.user.id)
       .single()
 
     if (profileError) {
@@ -58,140 +54,129 @@ export function useTickets() {
       .from('tickets')
       .select(`
         *,
-        sbu:sbu_id (
-          id,
-          name
-        ),
         creator:created_by (
-          id,
+          user_id,
           email,
           full_name,
           role,
-          sbu_id,
+          sbu,
           avatar_url,
           created_at,
-          updated_at
+          updated_at,
+          status
         ),
         assignee:assigned_to (
-          id,
+          user_id,
           email,
           full_name,
           role,
-          sbu_id,
+          sbu,
           avatar_url,
           created_at,
-          updated_at
+          updated_at,
+          status
         )
       `)
-      .eq('is_deleted', false)
 
     // Apply role-based filters
     if (userProfile.role === 'agent') {
-      const sbuId = userProfile.tier_assignments?.[0]?.sbu_id
-      if (!sbuId) throw new Error('Agent not assigned to any SBU')
       query = query
-        .eq('sbu_id', sbuId)
-        .or(`assignee.eq.${session.user.id},creator.eq.${session.user.id}`)
+        .eq('sbu_id', userProfile.sbu)
+        .or(`assigned_to.eq.${session.user.id},created_by.eq.${session.user.id}`)
     } else if (userProfile.role === 'manager') {
-      const sbuId = userProfile.tier_assignments?.[0]?.sbu_id
-      if (!sbuId) throw new Error('Manager not assigned to any SBU')
-      query = query.eq('sbu_id', sbuId)
+      query = query.eq('sbu_id', userProfile.sbu)
     }
 
-    return query
-  }, [supabase, session])
+    return { query, userProfile }
+  }, [session, supabase])
 
-  // Apply filters to query
-  const applyFilters = useCallback((query: any, currentFilters: TicketFilters) => {
-    if (currentFilters.status?.length) {
-      query = query.in('status', currentFilters.status)
-    }
-    if (currentFilters.priority?.length) {
-      query = query.in('priority', currentFilters.priority)
-    }
-    if (currentFilters.sbu_id) {
-      query = query.eq('sbu_id', currentFilters.sbu_id)
-    }
-    if (currentFilters.assigned_to) {
-      query = query.eq('assignee', currentFilters.assigned_to)
-    }
-    if (currentFilters.search) {
-      query = query.or(`title.ilike.%${currentFilters.search}%,description.ilike.%${currentFilters.search}%`)
-    }
-    if (currentFilters.dateRange) {
-      query = query
-        .gte('created_at', currentFilters.dateRange.start.toISOString())
-        .lte('created_at', currentFilters.dateRange.end.toISOString())
-    }
-    return query
-  }, [])
-
-  // Fetch tickets with current filters
+  // Fetch tickets with filters
   const fetchTickets = useCallback(async () => {
-    setLoading(true)
-    setError(null)
+    if (!session?.user?.id) {
+      setLoading(false)
+      return
+    }
 
     try {
-      const query = await buildBaseQuery()
-      if (!query) {
-        setTickets([])
+      setLoading(true)
+      setError(null)
+
+      const result = await buildBaseQuery()
+      if (!result) {
+        setLoading(false)
         return
       }
 
-      const { data: ticketsData, error: ticketsError } = await query
+      const { query } = result
+      let filteredQuery = query
 
-      if (ticketsError) {
-        setError(ticketsError)
-        return
+      // Apply filters
+      if (filters.status?.length) {
+        filteredQuery = filteredQuery.in('status', filters.status)
+      }
+      if (filters.priority?.length) {
+        filteredQuery = filteredQuery.in('priority', filters.priority)
+      }
+      if (filters.sbu) {
+        filteredQuery = filteredQuery.eq('sbu_id', filters.sbu)
+      }
+      if (filters.assigned_to) {
+        filteredQuery = filteredQuery.eq('assigned_to', filters.assigned_to)
+      }
+      if (filters.search) {
+        filteredQuery = filteredQuery.or(
+          `title.ilike.%${filters.search}%,description.ilike.%${filters.search}%`
+        )
+      }
+      if (filters.dateRange) {
+        filteredQuery = filteredQuery
+          .gte('created_at', filters.dateRange.start.toISOString())
+          .lte('created_at', filters.dateRange.end.toISOString())
       }
 
-      // Transform the data to match the expected types
-      const transformedTickets = ticketsData.map(ticket => ({
-        ...ticket,
-        created_by: ticket.creator?.id || ticket.created_by,
-        assigned_to: ticket.assignee?.id || ticket.assigned_to,
-        creator: ticket.creator,
-        assignee: ticket.assignee,
-        sbu: ticket.sbu
-      }))
+      // Order by created_at desc
+      const { data, error: fetchError } = await filteredQuery
+        .order('created_at', { ascending: false })
 
-      setTickets(transformedTickets)
+      if (fetchError) throw fetchError
+
+      setTickets(data || [])
     } catch (err) {
+      console.error('Error fetching tickets:', err)
       setError(err as PostgrestError)
+      toast.error('Failed to fetch tickets')
     } finally {
       setLoading(false)
     }
-  }, [buildBaseQuery])
+  }, [buildBaseQuery, filters, session])
 
-  // Create new ticket
-  const createTicket = useCallback(async (ticketData: TicketInput) => {
+  // Create a new ticket
+  const createTicket = async (input: TicketInput) => {
     try {
-      if (!session?.user?.id) throw new Error('User not authenticated')
-
       const { data, error } = await supabase
         .from('tickets')
         .insert({
-          ...ticketData,
-          created_by: session.user.id,
-          status: ticketData.status || 'open'
+          ...input,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
         })
         .select()
         .single()
 
       if (error) throw error
 
-      setTickets(prev => [data as Ticket, ...prev])
+      setTickets(prev => [data, ...prev])
       toast.success('Ticket created successfully')
       return data
     } catch (err) {
-      const error = err as PostgrestError
+      console.error('Error creating ticket:', err)
       toast.error('Failed to create ticket')
-      throw error
+      throw err
     }
-  }, [supabase, session])
+  }
 
-  // Update ticket
-  const updateTicket = useCallback(async (id: string, updates: TicketUpdate) => {
+  // Update a ticket
+  const updateTicket = async (id: string, updates: TicketUpdate) => {
     try {
       const { data, error } = await supabase
         .from('tickets')
@@ -206,23 +191,26 @@ export function useTickets() {
       if (error) throw error
 
       setTickets(prev =>
-        prev.map(ticket => (ticket.id === id ? { ...ticket, ...data } as Ticket : ticket))
+        prev.map(ticket => (ticket.id === id ? data : ticket))
       )
       toast.success('Ticket updated successfully')
       return data
     } catch (err) {
-      const error = err as PostgrestError
+      console.error('Error updating ticket:', err)
       toast.error('Failed to update ticket')
-      throw error
+      throw err
     }
-  }, [supabase])
+  }
 
-  // Delete ticket (soft delete)
-  const deleteTicket = useCallback(async (id: string) => {
+  // Delete a ticket (soft delete)
+  const deleteTicket = async (id: string) => {
     try {
       const { error } = await supabase
         .from('tickets')
-        .update({ is_deleted: true })
+        .update({
+          is_deleted: true,
+          updated_at: new Date().toISOString()
+        })
         .eq('id', id)
 
       if (error) throw error
@@ -230,40 +218,16 @@ export function useTickets() {
       setTickets(prev => prev.filter(ticket => ticket.id !== id))
       toast.success('Ticket deleted successfully')
     } catch (err) {
-      const error = err as PostgrestError
+      console.error('Error deleting ticket:', err)
       toast.error('Failed to delete ticket')
-      throw error
+      throw err
     }
-  }, [supabase])
+  }
 
-  // Subscribe to real-time updates
-  useEffect(() => {
-    if (!session?.user?.id) return
-
-    const channel = supabase
-      .channel('tickets-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'tickets'
-        },
-        () => {
-          fetchTickets()
-        }
-      )
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [supabase, session, fetchTickets])
-
-  // Initial fetch and filter changes
+  // Fetch tickets when session or filters change
   useEffect(() => {
     fetchTickets()
-  }, [fetchTickets])
+  }, [fetchTickets, session?.user?.id])
 
   return {
     tickets,

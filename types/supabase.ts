@@ -35,7 +35,7 @@ export interface Database {
           is_active?: boolean
         }
       }
-      user_profiles: {
+      user_profiles_new: {
         Row: {
           id: string
           created_at: string
@@ -43,10 +43,12 @@ export interface Database {
           user_id: string
           full_name: string
           email: string
-          role: Database['public']['Enums']['user_role']
-          sbu_id: string | null
-          is_active: boolean
+          role: 'user' | 'agent' | 'manager' | 'admin'
+          sbu: string
+          status: 'pending' | 'active' | 'inactive'
           avatar_url: string | null
+          last_login: string | null
+          settings: Json | null
         }
         Insert: {
           id?: string
@@ -55,10 +57,12 @@ export interface Database {
           user_id: string
           full_name: string
           email: string
-          role?: Database['public']['Enums']['user_role']
-          sbu_id?: string | null
-          is_active?: boolean
+          role?: 'user' | 'agent' | 'manager' | 'admin'
+          sbu: string
+          status?: 'pending' | 'active' | 'inactive'
           avatar_url?: string | null
+          last_login?: string | null
+          settings?: Json | null
         }
         Update: {
           id?: string
@@ -67,42 +71,12 @@ export interface Database {
           user_id?: string
           full_name?: string
           email?: string
-          role?: Database['public']['Enums']['user_role']
-          sbu_id?: string | null
-          is_active?: boolean
+          role?: 'user' | 'agent' | 'manager' | 'admin'
+          sbu?: string
+          status?: 'pending' | 'active' | 'inactive'
           avatar_url?: string | null
-        }
-      }
-      sla_configs: {
-        Row: {
-          id: string
-          created_at: string
-          updated_at: string
-          sbu_id: string
-          priority: Database['public']['Enums']['ticket_priority']
-          response_time_hours: number
-          resolution_time_hours: number
-          is_active: boolean
-        }
-        Insert: {
-          id?: string
-          created_at?: string
-          updated_at?: string
-          sbu_id: string
-          priority: Database['public']['Enums']['ticket_priority']
-          response_time_hours?: number
-          resolution_time_hours?: number
-          is_active?: boolean
-        }
-        Update: {
-          id?: string
-          created_at?: string
-          updated_at?: string
-          sbu_id?: string
-          priority?: Database['public']['Enums']['ticket_priority']
-          response_time_hours?: number
-          resolution_time_hours?: number
-          is_active?: boolean
+          last_login?: string | null
+          settings?: Json | null
         }
       }
       tickets: {
@@ -112,18 +86,15 @@ export interface Database {
           updated_at: string
           title: string
           description: string
-          status: Database['public']['Enums']['ticket_status']
-          priority: Database['public']['Enums']['ticket_priority']
-          sla_time: number
+          status: 'NEW' | 'ASSIGNED' | 'IN_PROGRESS' | 'ESCALATED_TIER1' | 'ESCALATED_TIER2' | 'ESCALATED_TIER3' | 'RESOLVED' | 'CLOSED'
+          priority: 'low' | 'medium' | 'high' | 'urgent'
           created_by: string
           assigned_to: string | null
           sbu_id: string
-          resolution: string | null
-          card_number: string | null
-          system_module: string | null
-          account_number: string | null
-          query_type: string | null
-          is_active: boolean
+          resolved_at: string | null
+          closed_at: string | null
+          sla_deadline: string | null
+          metadata: Json | null
         }
         Insert: {
           id?: string
@@ -131,18 +102,15 @@ export interface Database {
           updated_at?: string
           title: string
           description: string
-          status?: Database['public']['Enums']['ticket_status']
-          priority?: Database['public']['Enums']['ticket_priority']
-          sla_time?: number
+          status?: 'NEW' | 'ASSIGNED' | 'IN_PROGRESS' | 'ESCALATED_TIER1' | 'ESCALATED_TIER2' | 'ESCALATED_TIER3' | 'RESOLVED' | 'CLOSED'
+          priority?: 'low' | 'medium' | 'high' | 'urgent'
           created_by: string
           assigned_to?: string | null
           sbu_id: string
-          resolution?: string | null
-          card_number?: string | null
-          system_module?: string | null
-          account_number?: string | null
-          query_type?: string | null
-          is_active?: boolean
+          resolved_at?: string | null
+          closed_at?: string | null
+          sla_deadline?: string | null
+          metadata?: Json | null
         }
         Update: {
           id?: string
@@ -150,18 +118,79 @@ export interface Database {
           updated_at?: string
           title?: string
           description?: string
-          status?: Database['public']['Enums']['ticket_status']
-          priority?: Database['public']['Enums']['ticket_priority']
-          sla_time?: number
+          status?: 'NEW' | 'ASSIGNED' | 'IN_PROGRESS' | 'ESCALATED_TIER1' | 'ESCALATED_TIER2' | 'ESCALATED_TIER3' | 'RESOLVED' | 'CLOSED'
+          priority?: 'low' | 'medium' | 'high' | 'urgent'
           created_by?: string
           assigned_to?: string | null
           sbu_id?: string
-          resolution?: string | null
-          card_number?: string | null
-          system_module?: string | null
-          account_number?: string | null
-          query_type?: string | null
+          resolved_at?: string | null
+          closed_at?: string | null
+          sla_deadline?: string | null
+          metadata?: Json | null
+        }
+      }
+      sla_configs: {
+        Row: {
+          id: string
+          created_at: string
+          updated_at: string
+          sbu_id: string
+          status: 'NEW' | 'ASSIGNED' | 'IN_PROGRESS' | 'ESCALATED_TIER1' | 'ESCALATED_TIER2' | 'ESCALATED_TIER3' | 'RESOLVED' | 'CLOSED'
+          priority: 'low' | 'medium' | 'high' | 'urgent'
+          sla_hours: number
+          is_active: boolean
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          updated_at?: string
+          sbu_id: string
+          status: 'NEW' | 'ASSIGNED' | 'IN_PROGRESS' | 'ESCALATED_TIER1' | 'ESCALATED_TIER2' | 'ESCALATED_TIER3' | 'RESOLVED' | 'CLOSED'
+          priority: 'low' | 'medium' | 'high' | 'urgent'
+          sla_hours: number
           is_active?: boolean
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          updated_at?: string
+          sbu_id?: string
+          status?: 'NEW' | 'ASSIGNED' | 'IN_PROGRESS' | 'ESCALATED_TIER1' | 'ESCALATED_TIER2' | 'ESCALATED_TIER3' | 'RESOLVED' | 'CLOSED'
+          priority?: 'low' | 'medium' | 'high' | 'urgent'
+          sla_hours?: number
+          is_active?: boolean
+        }
+      }
+      ticket_comments: {
+        Row: {
+          id: string
+          created_at: string
+          updated_at: string
+          ticket_id: string
+          user_id: string
+          content: string
+          is_internal: boolean
+          metadata: Json | null
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          updated_at?: string
+          ticket_id: string
+          user_id: string
+          content: string
+          is_internal?: boolean
+          metadata?: Json | null
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          updated_at?: string
+          ticket_id?: string
+          user_id?: string
+          content?: string
+          is_internal?: boolean
+          metadata?: Json | null
         }
       }
       ticket_history: {
@@ -193,39 +222,10 @@ export interface Database {
           new_value?: string
         }
       }
-      ticket_comments: {
-        Row: {
-          id: string
-          created_at: string
-          updated_at: string
-          ticket_id: string
-          user_id: string
-          content: string
-          is_internal: boolean
-        }
-        Insert: {
-          id?: string
-          created_at?: string
-          updated_at?: string
-          ticket_id: string
-          user_id: string
-          content: string
-          is_internal?: boolean
-        }
-        Update: {
-          id?: string
-          created_at?: string
-          updated_at?: string
-          ticket_id?: string
-          user_id?: string
-          content?: string
-          is_internal?: boolean
-        }
-      }
     }
     Enums: {
       user_role: 'user' | 'agent' | 'manager' | 'admin'
-      ticket_status: 'new' | 'assigned' | 'in_progress' | 'escalated' | 'resolved' | 'closed'
+      ticket_status: 'NEW' | 'ASSIGNED' | 'IN_PROGRESS' | 'ESCALATED_TIER1' | 'ESCALATED_TIER2' | 'ESCALATED_TIER3' | 'RESOLVED' | 'CLOSED'
       ticket_priority: 'low' | 'medium' | 'high' | 'urgent'
     }
     CompositeTypes: {

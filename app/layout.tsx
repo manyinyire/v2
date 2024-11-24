@@ -5,6 +5,7 @@ import { Toaster } from '@/components/ui/sonner'
 import { MainLayout } from '@/components/Layout/MainLayout'
 import { headers } from 'next/headers'
 import { AuthProvider } from '@/contexts/AuthContext'
+import { SupabaseProvider } from '@/providers/SupabaseProvider'
 import './globals.css'
 
 const inter = Inter({ 
@@ -37,16 +38,18 @@ export default async function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <AuthProvider>
-            {isAuthPage ? (
-              children
-            ) : (
-              <MainLayout>
-                {children}
-              </MainLayout>
-            )}
-          </AuthProvider>
-          <Toaster />
+          <SupabaseProvider>
+            <AuthProvider>
+              {isAuthPage ? (
+                children
+              ) : (
+                <MainLayout>
+                  {children}
+                </MainLayout>
+              )}
+              <Toaster />
+            </AuthProvider>
+          </SupabaseProvider>
         </ThemeProvider>
       </body>
     </html>

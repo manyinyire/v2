@@ -17,7 +17,7 @@ export function useUser() {
         }
 
         const { data: profile, error } = await supabase
-          .from('user_profiles')
+          .from('user_profiles_new')
           .select('*, sbu:sbus(*)')
           .eq('user_id', user.id)
           .single()

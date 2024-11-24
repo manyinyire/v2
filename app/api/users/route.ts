@@ -6,23 +6,23 @@ import type { Database } from '@/types/supabase'
 
 export async function GET() {
   try {
-    const cookieStore = await cookies()
-    const supabase = createRouteHandlerClient<Database>({ cookies: () => cookieStore })
+    const cookieStore = cookies()
+    const supabase = createRouteHandlerClient<Database>({ cookies: async () => cookieStore })
 
     // Fetch user profiles with their roles
     const { data: users, error } = await supabase
-      .from('user_profiles')
+      .from('user_profiles_new')
       .select(`
         id,
         user_id,
         full_name,
         avatar_url,
         sbu_id,
-        users (
-          email,
-          role
-        )
+        status,
+        email,
+        role
       `)
+      .eq('status', 'active')
 
     if (error) {
       console.error('Error fetching users:', error)
@@ -33,10 +33,11 @@ export async function GET() {
     const transformedUsers = users.map(user => ({
       id: user.user_id,
       full_name: user.full_name,
-      email: user.users?.email || '',
-      role: user.users?.role || 'agent',
+      email: user.email,
+      role: user.role,
       avatar_url: user.avatar_url,
-      sbu_id: user.sbu_id
+      sbu_id: user.sbu_id,
+      status: user.status
     }))
 
     return NextResponse.json({ users: transformedUsers })
@@ -73,11 +74,13 @@ export async function POST(request: Request) {
 
     // Create user profile
     const { error: profileError } = await supabase
-      .from('user_profiles')
+      .from('user_profiles_new')
       .insert({
         id: authData.user.id,
         full_name,
-        role
+        role,
+        email,
+        status: 'active'
       })
 
     if (profileError) throw profileError
@@ -122,20 +125,11 @@ export async function PUT(request: Request) {
 
     // Update user profile
     const { error: profileError } = await supabase
-      .from('user_profiles')
-      .update({ full_name, role })
+      .from('user_profiles_new')
+      .update({ full_name, role, email })
       .eq('id', id)
 
     if (profileError) throw profileError
-
-    // Update email if provided
-    if (email) {
-      const { error: authError } = await supabase.auth.admin.updateUserById(
-        id,
-        { email }
-      )
-      if (authError) throw authError
-    }
 
     // Update SBU assignment if provided
     if (sbu_id) {
@@ -191,10 +185,10 @@ export async function DELETE(request: Request) {
       .delete()
       .eq('user_id', id)
 
-    // Delete user profile
+    // Update user profile status to inactive
     const { error: profileError } = await supabase
-      .from('user_profiles')
-      .delete()
+      .from('user_profiles_new')
+      .update({ status: 'inactive', updated_at: new Date().toISOString() })
       .eq('id', id)
 
     if (profileError) throw profileError

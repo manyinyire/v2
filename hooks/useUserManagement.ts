@@ -16,6 +16,7 @@ interface User {
   sbu_id?: string
   sbu_name?: string
   tier?: string
+  status: string
 }
 
 interface NewUser {
@@ -34,7 +35,7 @@ interface UpdateUser {
   tier?: string
 }
 
-type UserProfileWithRelations = Database['public']['Tables']['user_profiles']['Row'] & {
+type UserProfileWithRelations = Database['public']['Tables']['user_profiles_new']['Row'] & {
   users: {
     email: string
     last_sign_in_at: string | null
@@ -68,13 +69,15 @@ export function useUserManagement() {
       setLoading('loading')
       
       const { data: userProfiles, error: profileError } = await supabase
-        .from('user_profiles')
+        .from('user_profiles_new')
         .select(`
           id,
           full_name,
           role,
           avatar_url,
           created_at,
+          status,
+          email,
           tier_assignments (
             tier,
             sbus (
@@ -87,7 +90,7 @@ export function useUserManagement() {
             last_sign_in_at
           )
         `)
-        .eq('is_active', true)
+        .eq('status', 'active')
         .returns<UserProfileWithRelations[]>()
 
       if (profileError) throw profileError
@@ -96,14 +99,15 @@ export function useUserManagement() {
       const transformedUsers = userProfiles.map(profile => ({
         id: profile.id,
         full_name: profile.full_name || '',
-        email: profile.users?.email || '',
+        email: profile.email || '',
         role: profile.role as UserRole,
         avatar_url: profile.avatar_url || undefined,
         created_at: profile.created_at,
         last_sign_in_at: profile.users?.last_sign_in_at || undefined,
         sbu_id: profile.tier_assignments?.[0]?.sbus?.id || undefined,
         sbu_name: profile.tier_assignments?.[0]?.sbus?.name || undefined,
-        tier: profile.tier_assignments?.[0]?.tier || undefined
+        tier: profile.tier_assignments?.[0]?.tier || undefined,
+        status: profile.status
       }))
 
       setUsers(transformedUsers)
@@ -131,12 +135,15 @@ export function useUserManagement() {
 
       // Create user profile
       const { data: profileData, error: profileError } = await supabase
-        .from('user_profiles')
+        .from('user_profiles_new')
         .insert({
           id: authData.user!.id,
           full_name,
           role,
-          is_active: true
+          status: 'active',
+          email,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
         })
         .select()
         .single()
@@ -171,10 +178,11 @@ export function useUserManagement() {
 
       // Update profile
       const { error: profileError } = await supabase
-        .from('user_profiles')
+        .from('user_profiles_new')
         .update({
           full_name: updates.full_name,
-          role: updates.role
+          role: updates.role,
+          updated_at: new Date().toISOString()
         })
         .eq('id', id)
 
@@ -207,8 +215,8 @@ export function useUserManagement() {
       setLoading('loading')
 
       const { error } = await supabase
-        .from('user_profiles')
-        .update({ is_active: false })
+        .from('user_profiles_new')
+        .update({ status: 'inactive', updated_at: new Date().toISOString() })
         .eq('id', id)
 
       if (error) throw error

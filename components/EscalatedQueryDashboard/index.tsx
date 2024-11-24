@@ -92,7 +92,7 @@ export function EscalatedQueryDashboard() {
 
   // Filter states
   const [searchQuery, setSearchQuery] = React.useState("")
-  const [statusFilter, setStatusFilter] = React.useState<TicketStatus>("open")
+  const [statusFilter, setStatusFilter] = React.useState<TicketStatus>("NEW")
   const [sbuFilter, setSbuFilter] = React.useState("all")
   const [activeTab, setActiveTab] = React.useState("overview")
   const [selectedTicket, setSelectedTicket] = React.useState<Ticket | null>(null)
@@ -199,7 +199,7 @@ export function EscalatedQueryDashboard() {
 
   const handleAssignTicket = async (ticketId: string) => {
     try {
-      await updateTicket(ticketId, { status: 'assigned' })
+      await updateTicket(ticketId, { status: 'ASSIGNED' })
       toast.success('Ticket assigned successfully')
     } catch (error) {
       toast.error('Failed to assign ticket')
@@ -208,7 +208,7 @@ export function EscalatedQueryDashboard() {
 
   const handleResolveTicket = async (ticketId: string) => {
     try {
-      await updateTicket(ticketId, { status: 'resolved' })
+      await updateTicket(ticketId, { status: 'RESOLVED' })
       toast.success('Ticket resolved successfully')
     } catch (error) {
       toast.error('Failed to resolve ticket')
@@ -217,7 +217,7 @@ export function EscalatedQueryDashboard() {
 
   const handleEscalateTicket = async (ticketId: string) => {
     try {
-      await updateTicket(ticketId, { status: 'escalated' })
+      await updateTicket(ticketId, { status: 'ESCALATED_TIER1' })
       toast.success('Ticket escalated successfully')
     } catch (error) {
       toast.error('Failed to escalate ticket')
@@ -298,11 +298,14 @@ export function EscalatedQueryDashboard() {
                   <SelectValue placeholder="Filter by status" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="open">Open</SelectItem>
-                  <SelectItem value="assigned">Assigned</SelectItem>
-                  <SelectItem value="in_progress">In Progress</SelectItem>
-                  <SelectItem value="resolved">Resolved</SelectItem>
-                  <SelectItem value="escalated">Escalated</SelectItem>
+                  <SelectItem value="NEW">New</SelectItem>
+                  <SelectItem value="ASSIGNED">Assigned</SelectItem>
+                  <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
+                  <SelectItem value="RESOLVED">Resolved</SelectItem>
+                  <SelectItem value="ESCALATED_TIER1">Escalated (Tier 1)</SelectItem>
+                  <SelectItem value="ESCALATED_TIER2">Escalated (Tier 2)</SelectItem>
+                  <SelectItem value="ESCALATED_TIER3">Escalated (Tier 3)</SelectItem>
+                  <SelectItem value="CLOSED">Closed</SelectItem>
                 </SelectContent>
               </Select>
             </div>
