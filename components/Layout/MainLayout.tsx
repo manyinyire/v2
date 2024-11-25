@@ -39,7 +39,7 @@ export function MainLayout({ children }: MainLayoutProps) {
 
   useEffect(() => {
     if (!loading && !user) {
-      router.push('/auth/signin')
+      router.push('/auth/login')
     }
   }, [user, router, loading])
 

@@ -2,10 +2,10 @@
 
 import { createContext, useContext, useEffect, useState } from 'react'
 import { User } from '@supabase/supabase-js'
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import type { Database } from '@/types/database'
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 
 type UserProfile = Database['public']['Tables']['user_profiles_new']['Row']
 
@@ -30,18 +30,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const supabase = createClientComponentClient<Database>()
 
   useEffect(() => {
-    // Check initial session
     const checkSession = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession()
+        console.log('AuthContext - checking session')
+        const { data: { session }, error } = await supabase.auth.getSession()
+        console.log('AuthContext - session:', session)
+        
+        if (error) {
+          console.error('Session error:', error)
+          return
+        }
+
         if (session?.user) {
           setUser(session.user)
-          const { data: profile } = await supabase
+          const { data: profile, error: profileError } = await supabase
             .from('user_profiles_new')
             .select('*')
             .eq('user_id', session.user.id)
             .single()
-          setProfile(profile)
+          
+          if (profileError) {
+            console.error('Profile error:', profileError)
+          } else {
+            console.log('AuthContext - profile:', profile)
+            setProfile(profile)
+          }
         }
       } catch (error) {
         console.error('Error checking session:', error)
@@ -52,18 +65,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     checkSession()
 
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('AuthContext - auth state changed:', event, session)
+      
       if (session?.user) {
         setUser(session.user)
-        const { data: profile } = await supabase
+        const { data: profile, error } = await supabase
           .from('user_profiles_new')
           .select('*')
           .eq('user_id', session.user.id)
           .single()
-        setProfile(profile)
+        
+        if (error) {
+          console.error('Profile error:', error)
+        } else {
+          console.log('AuthContext - updated profile:', profile)
+          setProfile(profile)
+        }
       } else {
         setUser(null)
         setProfile(null)
@@ -74,112 +92,94 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       subscription.unsubscribe()
     }
-  }, [])
+  }, [supabase, router])
 
   const signUp = async (email: string, password: string, fullName: string, sbu: string) => {
-    const { error: signUpError, data } = await supabase.auth.signUp({
-      email,
-      password,
-    })
+    try {
+      const { data: { user: newUser }, error } = await supabase.auth.signUp({
+        email,
+        password,
+      })
 
-    if (signUpError) throw signUpError
+      if (error) throw error
 
-    if (data.user) {
-      // Create user profile with pending status
-      const { error: profileError } = await supabase
-        .from('user_profiles_new')
-        .insert({
-          user_id: data.user.id,
-          full_name: fullName,
-          sbu,
-          status: 'pending',
-          role: 'user',
-          email: email,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
+      if (newUser) {
+        const { error: profileError } = await supabase
+          .from('user_profiles_new')
+          .insert([
+            {
+              user_id: newUser.id,
+              full_name: fullName,
+              email,
+              sbu_id: sbu,
+              role: 'user',
+            },
+          ])
 
-      if (profileError) throw profileError
-
-      toast.success('Account created successfully! Please wait for admin approval.')
-      router.push('/auth/pending-approval')
+        if (profileError) throw profileError
+        toast.success('Registration successful! Please check your email to verify your account.')
+      }
+    } catch (error: any) {
+      toast.error(error.message)
+      throw error
     }
   }
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
-
-    if (error) throw error
-
-    const { data: profile, error: profileError } = await supabase
-      .from('user_profiles_new')
-      .select('*')
-      .eq('email', email)
-      .single()
-
-    if (profileError) throw profileError
-
-    if (profile.status === 'pending') {
-      await supabase.auth.signOut()
-      router.push('/auth/pending-approval')
-      throw new Error('Your account is pending approval')
-    }
-
-    if (profile.status === 'inactive') {
-      await supabase.auth.signOut()
-      router.push('/auth/inactive')
-      throw new Error('Your account has been deactivated')
-    }
-
-    // Update last_login timestamp
-    await supabase
-      .from('user_profiles_new')
-      .update({
-        last_login: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       })
-      .eq('user_id', profile.user_id)
-
-    router.refresh()
+      if (error) throw error
+      router.push('/dashboard')
+    } catch (error: any) {
+      toast.error(error.message)
+      throw error
+    }
   }
 
   const signOut = async () => {
-    await supabase.auth.signOut()
-    router.push('/login')
+    try {
+      const { error } = await supabase.auth.signOut()
+      if (error) throw error
+      router.push('/auth/login')
+    } catch (error: any) {
+      toast.error(error.message)
+      throw error
+    }
   }
 
   const resetPassword = async (email: string) => {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/reset-password`,
-    })
-
-    if (error) throw error
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/auth/callback?next=/auth/update-password`,
+      })
+      if (error) throw error
+      toast.success('Password reset instructions sent to your email.')
+    } catch (error: any) {
+      toast.error(error.message)
+      throw error
+    }
   }
 
   const updateProfile = async (data: Partial<UserProfile>) => {
-    if (!user) throw new Error('No user logged in')
+    try {
+      if (!user) throw new Error('No user logged in')
 
-    const { error } = await supabase
-      .from('user_profiles_new')
-      .update({
-        ...data,
-        updated_at: new Date().toISOString()
-      })
-      .eq('user_id', user.id)
+      const { error } = await supabase
+        .from('user_profiles_new')
+        .update(data)
+        .eq('user_id', user.id)
 
-    if (error) throw error
-
-    const { data: updatedProfile, error: fetchError } = await supabase
-      .from('user_profiles_new')
-      .select('*')
-      .eq('user_id', user.id)
-      .single()
-
-    if (fetchError) throw fetchError
-    setProfile(updatedProfile)
+      if (error) throw error
+      
+      setProfile((prev: UserProfile | null) => prev ? { ...prev, ...data } : null)
+      toast.success('Profile updated successfully!')
+    } catch (error: any) {
+      toast.error(error.message)
+      throw error
+    }
   }
 
   const value = {
@@ -193,12 +193,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     updateProfile,
   }
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  )
 }
 
-export const useAuth = () => {
+export function useAuth() {
   const context = useContext(AuthContext)
-  if (context === undefined) {
+  if (!context) {
     throw new Error('useAuth must be used within an AuthProvider')
   }
   return context

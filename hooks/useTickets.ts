@@ -37,6 +37,7 @@ export function useTickets() {
 
   // Helper function to build the base query with role-based access
   const buildBaseQuery = useCallback(async () => {
+    console.log('buildBaseQuery - session:', session?.user?.id)
     if (!session?.user?.id) return null
 
     // Get user's role and SBU
@@ -46,6 +47,7 @@ export function useTickets() {
       .eq('user_id', session.user.id)
       .single()
 
+    console.log('buildBaseQuery - userProfile:', userProfile, 'error:', profileError)
     if (profileError) {
       throw profileError
     }
@@ -80,10 +82,12 @@ export function useTickets() {
 
     // Apply role-based filters
     if (userProfile.role === 'agent') {
+      console.log('buildBaseQuery - applying agent filters')
       query = query
         .eq('sbu_id', userProfile.sbu)
         .or(`assigned_to.eq.${session.user.id},created_by.eq.${session.user.id}`)
     } else if (userProfile.role === 'manager') {
+      console.log('buildBaseQuery - applying manager filters')
       query = query.eq('sbu_id', userProfile.sbu)
     }
 
@@ -92,7 +96,9 @@ export function useTickets() {
 
   // Fetch tickets with filters
   const fetchTickets = useCallback(async () => {
+    console.log('fetchTickets - starting')
     if (!session?.user?.id) {
+      console.log('fetchTickets - no session, returning')
       setLoading(false)
       return
     }
@@ -102,7 +108,9 @@ export function useTickets() {
       setError(null)
 
       const result = await buildBaseQuery()
+      console.log('fetchTickets - buildBaseQuery result:', result)
       if (!result) {
+        console.log('fetchTickets - no query result, returning')
         setLoading(false)
         return
       }
@@ -112,32 +120,40 @@ export function useTickets() {
 
       // Apply filters
       if (filters.status?.length) {
+        console.log('fetchTickets - applying status filter:', filters.status)
         filteredQuery = filteredQuery.in('status', filters.status)
       }
       if (filters.priority?.length) {
+        console.log('fetchTickets - applying priority filter:', filters.priority)
         filteredQuery = filteredQuery.in('priority', filters.priority)
       }
       if (filters.sbu) {
+        console.log('fetchTickets - applying sbu filter:', filters.sbu)
         filteredQuery = filteredQuery.eq('sbu_id', filters.sbu)
       }
       if (filters.assigned_to) {
+        console.log('fetchTickets - applying assigned_to filter:', filters.assigned_to)
         filteredQuery = filteredQuery.eq('assigned_to', filters.assigned_to)
       }
       if (filters.search) {
+        console.log('fetchTickets - applying search filter:', filters.search)
         filteredQuery = filteredQuery.or(
           `title.ilike.%${filters.search}%,description.ilike.%${filters.search}%`
         )
       }
       if (filters.dateRange) {
+        console.log('fetchTickets - applying date range filter:', filters.dateRange)
         filteredQuery = filteredQuery
           .gte('created_at', filters.dateRange.start.toISOString())
           .lte('created_at', filters.dateRange.end.toISOString())
       }
 
       // Order by created_at desc
+      console.log('fetchTickets - executing query')
       const { data, error: fetchError } = await filteredQuery
         .order('created_at', { ascending: false })
 
+      console.log('fetchTickets - query result:', { data, error: fetchError })
       if (fetchError) throw fetchError
 
       setTickets(data || [])
@@ -146,6 +162,7 @@ export function useTickets() {
       setError(err as PostgrestError)
       toast.error('Failed to fetch tickets')
     } finally {
+      console.log('fetchTickets - finished, setting loading to false')
       setLoading(false)
     }
   }, [buildBaseQuery, filters, session])

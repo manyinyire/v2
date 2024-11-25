@@ -4,9 +4,8 @@ import type { NextRequest } from 'next/server'
 
 // List of public routes that don't require authentication
 const publicRoutes = [
-  '/',
-  '/login',
-  '/signup',
+  '/auth/login',
+  '/auth/signup',
   '/auth/callback',
   '/auth/forgot-password',
   '/auth/reset-password',
@@ -18,8 +17,8 @@ const publicRoutes = [
 
 // List of auth-only routes that should redirect to home if authenticated
 const authOnlyRoutes = [
-  '/login',
-  '/signup',
+  '/auth/login',
+  '/auth/signup',
   '/auth/forgot-password'
 ]
 
@@ -79,7 +78,7 @@ export async function middleware(req: NextRequest) {
     // If not authenticated and trying to access protected route, redirect to login
     if (!session) {
       console.log('No session, redirecting to login')
-      const loginUrl = new URL('/login', req.url)
+      const loginUrl = new URL('/auth/login', req.url)
       loginUrl.searchParams.set('redirectTo', req.nextUrl.pathname)
       return NextResponse.redirect(loginUrl)
     }
@@ -106,7 +105,7 @@ export async function middleware(req: NextRequest) {
     console.error('Middleware error:', error)
     
     // For any unexpected errors, redirect to login
-    const loginUrl = new URL('/login', req.url)
+    const loginUrl = new URL('/auth/login', req.url)
     loginUrl.searchParams.set('redirectTo', req.nextUrl.pathname)
     return NextResponse.redirect(loginUrl)
   }

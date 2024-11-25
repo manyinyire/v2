@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation'
 
 export default async function Home() {
   const supabase = createServerComponentClient({
-    cookies
+    cookies: () => cookies()
   })
 
   const {
